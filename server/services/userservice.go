@@ -25,7 +25,7 @@ func NewUserService(conn net.Conn) (userservice *UserService) {
 	return
 }
 
-// 登录消息的业务逻辑
+// Login 登录消息的业务逻辑
 func (this *UserService) Login(message *messages.Message) (user *models.User, err error) {
 	resmes := messages.Message{
 		Type: messages.LoginResponseMessageType,
@@ -43,18 +43,14 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 		loginresmes.Error = "消息错误，反序列失败"
 		fmt.Println("server user login failed")
 	} else {
-		user, err = this.userrepo.Login(loginmes.UserID, loginmes.UserPwd)
-		if err != nil && err == infos.ERR_USER_NOTEXISTS {
+		user, err = this.userrepo.GetUserByID(loginmes.UserID)
+		if err != nil || user == nil {
 			loginresmes.Code = 500
 			loginresmes.Error = "用户不存在"
 			fmt.Println("server user login failed")
-		} else if err != nil && err == infos.ERR_USER_INCORRECTPWD {
+		} else if user != nil && user.UserPwd != loginmes.UserPwd {
 			loginresmes.Code = 500
 			loginresmes.Error = "密码错误"
-			fmt.Println("server user login failed")
-		} else if err != nil {
-			loginresmes.Code = 500
-			loginresmes.Error = err.Error()
 			fmt.Println("server user login failed")
 		} else {
 			loginresmes.Code = 200
@@ -69,6 +65,7 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 		// loginresmes.Code = 500
 		// loginresmes.Error = err.Error()
 		// fmt.Println("server user login failed")
+		return
 	} else {
 		resmes.Data = string(data)
 		data, err = json.Marshal(resmes)
@@ -76,6 +73,7 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 			// loginresmes.Code = 500
 			// loginresmes.Error = err.Error()
 			// fmt.Println("server user login failed")
+			return
 		} else {
 			// loginresmes.Code = 200
 			// fmt.Println("server user login succeed")
@@ -86,7 +84,7 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 	return
 }
 
-// 注册消息的业务逻辑
+// Register 注册消息的业务逻辑
 func (this *UserService) Register(message *messages.Message) (err error) {
 	mes := messages.Message{
 		Type: messages.RegistryReponseMessageType,
@@ -103,7 +101,7 @@ func (this *UserService) Register(message *messages.Message) (err error) {
 		sendmes.Error = "消息错误，反序列失败"
 		fmt.Println("server register user faild")
 	} else {
-		err = this.userrepo.Register(&rm.User)
+		err = this.userrepo.Add(&rm.User)
 		if err == infos.ERR_USER_EXISTS {
 			sendmes.Code = 500
 			sendmes.Error = "注册失败，用户已存在"

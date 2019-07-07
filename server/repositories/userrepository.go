@@ -47,19 +47,39 @@ func (this *UserRepository) GetUserByID(id int) (user *models.User, err error) {
 	return
 }
 
-func (this *UserRepository) Login(userid int, passwd string) (user *models.User, err error) {
-	user, err = this.GetUserByID(userid)
+func (this *UserRepository) Update(user *models.User) (err error) {
+	conn, err := this.pool.Dial()
 	if err != nil {
-		user = nil
+		fmt.Println(err)
 		return
 	}
-	if user.UserPwd != passwd {
-		err = infos.ERR_USER_INCORRECTPWD
+	defer conn.Close()
+
+	u, err := this.GetUserByID(user.UserID)
+	if u == nil {
+		return infos.ERR_USER_NOTEXISTS
+	}
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(user)
+	if err != nil {
+		return
+	}
+	_, err = conn.Do("hset", "users", user.UserID, string(data))
+	if err != nil {
+		return
 	}
 	return
 }
 
-func (this *UserRepository) Register(user *models.User) (err error) {
+func (this *UserRepository) Delete(user *models.User) (err error) {
+	// TO-DO
+	return
+}
+
+func (this *UserRepository) Add(user *models.User) (err error) {
 	conn, err := this.pool.Dial()
 	if err != nil {
 		fmt.Println(err)
