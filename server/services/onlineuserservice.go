@@ -7,10 +7,13 @@ import (
 )
 
 var (
+	// Usermanager 全局，在线用户管理
 	Usermanager *UserOnlineManager
+	// ChanServerMessage 用于传递服务器需要主动推送的信息
+	ChanServerMessage = make(chan messages.Message)
 )
 
-// 在线用户管理
+// UserOnlineManager 在线用户管理
 type UserOnlineManager struct {
 	onlineUsers map[int]*DaemonService
 }
