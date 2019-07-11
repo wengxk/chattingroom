@@ -74,9 +74,10 @@ func (this *UserService) Login(userid int, passwd string) (err error) {
 			this.daemonService.UserID = userid
 			go this.daemonService.ProcessServerMessage()
 		}
-		for {
-			this.showMenus()
-		}
+		// 在运行service_test.go时需要注释
+		// for {
+		// 	this.showMenus()
+		// }
 	} else {
 		err = errors.New(resultmes.Error)
 	}

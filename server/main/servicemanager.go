@@ -17,6 +17,12 @@ type ServiceManager struct {
 }
 
 func (this *ServiceManager) HandleConnection() (err error) {
+	defer (func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+		}
+	})()
+
 	mt := &utils.MessageTransfer{
 		Conn: this.Conn,
 	}

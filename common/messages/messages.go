@@ -89,7 +89,7 @@ type UserStateChangeMessage struct {
 }
 
 const (
-	ToAll = 2 << iota
+	ToAll = 1 << iota
 	ToUsers
 	ToUserGroups
 )

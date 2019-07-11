@@ -156,7 +156,8 @@ func (this *UserService) GetOnlineUsers(message *messages.Message) (err error) {
 	users := Usermanager.GetAll()
 	m := make(map[int]int)
 	for k, v := range users {
-		m[k] = v.UserID
+		// m[k] = v.UserID
+		m[k] = v
 	}
 	resultmes.UserID = requestmes.UserID
 	resultmes.OnlineUsers = m
