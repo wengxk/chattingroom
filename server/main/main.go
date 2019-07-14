@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"time"
 )
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(120 * time.Second))
 	sm := &ServiceManager{
 		Conn: conn,
 	}

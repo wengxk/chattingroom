@@ -97,6 +97,10 @@ func (this *ServiceManager) handleService(message *messages.Message) (err error)
 		{
 			this.userService.Logout(message)
 		}
+	case messages.HeartBeatingMessageType:
+		{
+			this.userService.HeartBeat(message)
+		}
 	case messages.DaemonRequestMessageType:
 		{
 			err = this.daemonService.Accept(message)

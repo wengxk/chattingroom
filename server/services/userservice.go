@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 )
 
 type UserService struct {
@@ -212,4 +213,8 @@ func (this *UserService) Logout(message *messages.Message) {
 	mes.Data = string(data)
 
 	Usermanager.PushServerMessage(&mes)
+}
+
+func (this *UserService) HeartBeat(message *messages.Message) {
+	this.conn.SetDeadline(time.Now().Add(120 * time.Second))
 }

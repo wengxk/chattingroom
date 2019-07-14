@@ -17,6 +17,8 @@ const (
 	UserStateChangeMessageType        = "UserStateChangeMessage"
 	ShortMessageSenderMessageType     = "ShortMessageSenderMessage"
 	ShortMessageReceiverMessageType   = "ShortMessageReceiverMessage"
+	HeartBeatingMessageType           = "HeartBeatingMessage"
+	HeartBeatingResponseMessageType   = "HeartBeatingResponseMessage"
 )
 
 // Message 通用消息类型
@@ -110,4 +112,12 @@ type ShortMessageReceiverMessage struct {
 	DstUsers []models.User `json:"dstusers"` // 接收方用户ID
 	// DstUserGroups []models.UserGroup `json:"dstusergroups"` // 接收方用户组ID
 	Content string `json:"content"` //内容
+}
+
+type HeartBeatingMessage struct {
+	UserID int `json:"userid"`
+}
+
+type HeartBeatingResponseMessage struct {
+	UserID int `json:"userid"`
 }

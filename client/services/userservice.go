@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type UserService struct {
@@ -75,9 +76,9 @@ func (this *UserService) Login(userid int, passwd string) (err error) {
 			go this.daemonService.ProcessServerMessage()
 		}
 		// 在运行service_test.go时需要注释
-		// for {
-		// 	this.showMenus()
-		// }
+		for {
+			this.showMenus()
+		}
 	} else {
 		err = errors.New(resultmes.Error)
 	}
@@ -346,4 +347,45 @@ func (this *UserService) SendShortMessage(scope int, dstuserstrs string, content
 		return err
 	}
 	return nil
+}
+
+func (this *UserService) HeartBeat() (err error) {
+	mes := messages.Message{
+		Type: messages.HeartBeatingMessageType,
+	}
+	heart := messages.HeartBeatingMessage{
+		UserID: this.UserID,
+	}
+	data, err := json.Marshal(heart)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	mes.Data = string(data)
+	data, err = json.Marshal(mes)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	mt := utils.MessageTransfer{
+		Conn: this.Conn,
+	}
+
+	ticker := time.NewTicker(60 * time.Second)
+	for {
+		_, ok := <-ticker.C
+		if ok {
+			err = mt.SendMessage(data)
+			_, err = mt.ReceiveMessage()
+			//有错误，说明连接有问题，可能需要重连，一般会自动尝试重连几次，若还是失败则会告知用户
+			if err != nil {
+				ticker.Stop()
+				fmt.Println(err)
+				return
+			}
+		}
+	}
+
+	return
 }
