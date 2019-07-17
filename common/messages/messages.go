@@ -23,6 +23,7 @@ const (
 
 // Message 通用消息类型
 type Message struct {
+	UUID string `json:"uuid"` // UID
 	Type string `json:"type"` // 消息类型
 	Data string `json:"data"` // 消息数据
 }

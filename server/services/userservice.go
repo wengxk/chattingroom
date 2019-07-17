@@ -4,7 +4,6 @@ import (
 	"chattingroom/common/infos"
 	"chattingroom/common/messages"
 	"chattingroom/common/models"
-	"chattingroom/common/utils"
 	"chattingroom/server/repositories"
 	"encoding/json"
 	"fmt"
@@ -13,28 +12,28 @@ import (
 )
 
 type UserService struct {
-	conn     net.Conn
-	userrepo repositories.UserRepository
-	User     *models.User
+	conn              net.Conn
+	userrepo          repositories.UserRepository
+	User              *models.User
+	messageSenderChan chan *messages.Message
 }
 
-func NewUserService(conn net.Conn) (userservice *UserService) {
+func NewUserService(conn net.Conn, mschan chan *messages.Message) (userservice *UserService) {
 	userservice = &UserService{
-		conn:     conn,
-		userrepo: *repositories.NewUserRepository(),
+		conn:              conn,
+		userrepo:          *repositories.NewUserRepository(),
+		messageSenderChan: mschan,
 	}
 	return
 }
 
 // Login 登录消息的业务逻辑
 func (this *UserService) Login(message *messages.Message) (user *models.User, err error) {
-	resmes := messages.Message{
+	resmes := &messages.Message{
 		Type: messages.LoginResponseMessageType,
+		UUID: message.UUID,
 	}
 	loginresmes := messages.LoginResponseMessage{}
-	mf := utils.MessageTransfer{
-		Conn: this.conn,
-	}
 
 	// 取data，反序列化
 	var loginmes messages.LoginMessage
@@ -60,40 +59,46 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 		}
 	}
 
-	// 序列化要返回的消息
 	data, err := json.Marshal(loginresmes)
 	if err != nil {
-		// loginresmes.Code = 500
-		// loginresmes.Error = err.Error()
-		// fmt.Println("server user login failed")
 		return
-	} else {
-		resmes.Data = string(data)
-		data, err = json.Marshal(resmes)
-		if err != nil {
-			// loginresmes.Code = 500
-			// loginresmes.Error = err.Error()
-			// fmt.Println("server user login failed")
-			return
-		} else {
-			// loginresmes.Code = 200
-			// fmt.Println("server user login succeed")
+	}
+	resmes.Data = string(data)
+
+	if loginresmes.Code == 200 {
+
+		this.messageSenderChan <- resmes
+
+		// 添加用户到全局在线用户中
+		Usermanager.Add(this)
+
+		// 用户登录推送通知
+		lpmes := &messages.Message{
+			Type: messages.UserStateChangeMessageType,
 		}
+		usmes := messages.UserStateChangeMessage{
+			UserID:    user.UserID,
+			UserState: messages.UserOnline,
+		}
+		data, err = json.Marshal(usmes)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		lpmes.Data = string(data)
+		Usermanager.PushServerMessage(lpmes)
 	}
 
-	err = mf.SendMessage(data)
 	return
 }
 
 // Register 注册消息的业务逻辑
 func (this *UserService) Register(message *messages.Message) (err error) {
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.RegistryReponseMessageType,
+		UUID: message.UUID,
 	}
 	sendmes := messages.LoginResponseMessage{}
-	mt := utils.MessageTransfer{
-		Conn: this.conn,
-	}
 
 	var rm messages.RegistryMessage
 	err = json.Unmarshal([]byte(message.Data), &rm)
@@ -119,29 +124,21 @@ func (this *UserService) Register(message *messages.Message) (err error) {
 
 	data, err := json.Marshal(sendmes)
 	if err != nil {
-		// sendmes.Code = 500
-		// sendmes.Error = err.Error()
-		// fmt.Println("server register user faild")
+		return
 	} else {
 		mes.Data = string(data)
-		data, err = json.Marshal(mes)
-		if err != nil {
-			// sendmes.Code = 500
-			// sendmes.Error = err.Error()
-			// fmt.Println("server register user faild")
-		} else {
-			// sendmes.Code = 200
-		}
 	}
 
-	err = mt.SendMessage(data)
+	this.messageSenderChan <- mes
+
 	return
 }
 
 func (this *UserService) GetOnlineUsers(message *messages.Message) (err error) {
 
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.GetOnlineUsersResponseMessageType,
+		UUID: message.UUID,
 	}
 	requestmes := messages.GetOnlineUsersMessage{}
 	resultmes := messages.GetOnlineUsersResponseMessage{}
@@ -157,7 +154,6 @@ func (this *UserService) GetOnlineUsers(message *messages.Message) (err error) {
 	users := Usermanager.GetAll()
 	m := make(map[int]int)
 	for k, v := range users {
-		// m[k] = v.UserID
 		m[k] = v
 	}
 	resultmes.UserID = requestmes.UserID
@@ -173,18 +169,8 @@ func (this *UserService) GetOnlineUsers(message *messages.Message) (err error) {
 	}
 
 	mes.Data = string(data)
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println(err)
-		resultmes.Code = 500
-		resultmes.Error = err.Error()
-		return
-	}
-	mt := &utils.MessageTransfer{
-		Conn: this.conn,
-	}
-	err = mt.SendMessage(data)
 
+	this.messageSenderChan <- mes
 	return
 }
 
@@ -198,7 +184,7 @@ func (this *UserService) Logout(message *messages.Message) {
 	// 从在线用户中移除退出的用户
 	Usermanager.Remove(logoutmes.UserID)
 
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.UserStateChangeMessageType,
 	}
 	spmes := messages.UserStateChangeMessage{
@@ -212,7 +198,12 @@ func (this *UserService) Logout(message *messages.Message) {
 	}
 	mes.Data = string(data)
 
-	Usermanager.PushServerMessage(&mes)
+	Usermanager.PushServerMessage(mes)
+}
+
+func (this *UserService) PushServerMessage(message *messages.Message) {
+	this.messageSenderChan <- message
+
 }
 
 func (this *UserService) HeartBeat(message *messages.Message) {

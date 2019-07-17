@@ -11,12 +11,18 @@ import (
 )
 
 type ServiceManager struct {
-	Conn          net.Conn
-	userService   *services.UserService
-	daemonService *services.DaemonService
+	Conn              net.Conn
+	userService       *services.UserService
+	MessageSenderChan chan *messages.Message
 }
 
 func (this *ServiceManager) HandleConnection() (err error) {
+
+	this.MessageSenderChan = make(chan *messages.Message, 50)
+	this.userService = services.NewUserService(this.Conn, this.MessageSenderChan)
+
+	go this.sequentialSendMessage()
+
 	defer (func() {
 		if err := recover(); err != nil {
 			fmt.Println(err)
@@ -26,56 +32,18 @@ func (this *ServiceManager) HandleConnection() (err error) {
 	mt := &utils.MessageTransfer{
 		Conn: this.Conn,
 	}
-	mes, err := mt.ReceiveMessage()
-	if err == io.EOF {
-		fmt.Println("conn closed", err)
-		return err
-	}
-	if err != nil {
-		fmt.Println("conn read message err", err)
-		return err
-	}
-	err = this.createService(&mes)
-	if err != nil {
-		return err
-	}
-	err = this.handleService(&mes)
-	if err != nil {
-		fmt.Println("process message err", err)
-		return err
-	}
+
 	for {
 		mes, err := mt.ReceiveMessage()
-		err = this.handleService(&mes)
-		if err != nil {
-			fmt.Println("process message err", err)
+		if err == io.EOF {
+			fmt.Println("conn closed", err)
 			return err
 		}
+		if err != nil {
+			fmt.Println("conn read message err", err)
+		}
+		go this.handleService(mes)
 	}
-}
-
-func (this *ServiceManager) createService(message *messages.Message) (err error) {
-	switch message.Type {
-	case messages.LoginMessageType:
-		{
-			this.userService = services.NewUserService(this.Conn)
-		}
-	case messages.RegistryMessageType:
-		{
-			this.userService = services.NewUserService(this.Conn)
-		}
-	case messages.GetOnlineUsersMessageType:
-		{
-			this.userService = services.NewUserService(this.Conn)
-		}
-	case messages.DaemonRequestMessageType:
-		{
-			this.daemonService = services.NewDaemonService(this.Conn)
-		}
-	default:
-		return errors.New(fmt.Sprintln("未知消息类型，无法处理", message.Type))
-	}
-	return
 }
 
 // 消息处理中心，消息转发
@@ -101,10 +69,6 @@ func (this *ServiceManager) handleService(message *messages.Message) (err error)
 		{
 			this.userService.HeartBeat(message)
 		}
-	case messages.DaemonRequestMessageType:
-		{
-			err = this.daemonService.Accept(message)
-		}
 	case messages.ShortMessageSenderMessageType:
 		{
 			err = services.Usermanager.PushServerMessage(message)
@@ -113,4 +77,18 @@ func (this *ServiceManager) handleService(message *messages.Message) (err error)
 		return errors.New(fmt.Sprintln("未知消息类型，无法处理", message.Type))
 	}
 	return
+}
+
+func (this *ServiceManager) sequentialSendMessage() {
+	mt := utils.MessageTransfer{
+		Conn: this.Conn,
+	}
+	for {
+		mes := <-this.MessageSenderChan
+		err := mt.SendMessage(mes)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
 }

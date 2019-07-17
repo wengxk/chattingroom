@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bufio"
 	"chattingroom/common/messages"
 	"chattingroom/common/models"
 	"chattingroom/common/utils"
@@ -12,19 +13,25 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+)
+
+var (
+	MessageSenderChan chan *messages.Message
+	ResponseContainer utils.ConcurrentMap
 )
 
 type UserService struct {
-	Conn          net.Conn
-	UserID        int
-	daemonService *DaemonService
+	Conn   net.Conn
+	UserID int
 }
 
 func (this *UserService) Login(userid int, passwd string) (err error) {
-	// 先发消息长度，再发具体消息
 	// 准备消息
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.LoginMessageType,
+		UUID: uuid.New().String(),
 	}
 	// 准备登录消息
 	sendmes := messages.LoginMessage{
@@ -38,44 +45,25 @@ func (this *UserService) Login(userid int, passwd string) (err error) {
 		return err
 	}
 	mes.Data = string(data)
-	// 序列化要传输的消息
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println("json marshal err", err)
-		return err
-	}
 
-	mt := &utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	err = mt.SendMessage(data)
-	if err != nil {
-		fmt.Println("conn write message err", err)
-	}
-	mes, err = mt.ReceiveMessage()
-	if err != nil {
-		fmt.Println("conn read message err", err)
-	}
+	reschan := make(chan *messages.Message, 1)
+	ResponseContainer.Set(mes.UUID, reschan)
+	defer func() {
+		close(reschan)
+		ResponseContainer.Remove(mes.UUID)
+	}()
+
+	MessageSenderChan <- mes
+	res := <-reschan
 
 	var resultmes messages.LoginResponseMessage
-	err = json.Unmarshal([]byte(mes.Data), &resultmes)
+	err = json.Unmarshal([]byte(res.Data), &resultmes)
 	if err != nil {
 		fmt.Println(err)
 	}
 	if resultmes.Code == 200 {
+		this.UserID = userid
 		fmt.Println("登录成功")
-		// 创建一个守护协程，用于接收服务器主动推送的消息
-		this.daemonService = &DaemonService{}
-		daemonConn, err := net.Dial("tcp", "localhost:10001")
-		if err != nil {
-			fmt.Println("create deamon conn failed", err)
-		} else {
-			this.UserID = userid
-			this.daemonService.Conn = daemonConn
-			this.daemonService.UserID = userid
-			go this.daemonService.ProcessServerMessage()
-		}
-		// 在运行service_test.go时需要注释
 		for {
 			this.showMenus()
 		}
@@ -96,8 +84,9 @@ func (this *UserService) Register(userid int, username string, userpwd string) (
 		return
 	}
 	//准备消息
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.RegistryMessageType,
+		UUID: uuid.New().String(),
 	}
 	sendmes := messages.RegistryMessage{
 		User: *user,
@@ -108,27 +97,19 @@ func (this *UserService) Register(userid int, username string, userpwd string) (
 		return
 	}
 	mes.Data = string(data)
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
-	mt := &utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	err = mt.SendMessage(data)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	mes, err = mt.ReceiveMessage()
-	if err != nil {
-		fmt.Println(err)
-	}
+	reschan := make(chan *messages.Message, 1)
+	ResponseContainer.Set(mes.UUID, reschan)
+	defer func() {
+		close(reschan)
+		ResponseContainer.Remove(mes.UUID)
+	}()
+
+	MessageSenderChan <- mes
+	res := <-reschan
 
 	var resultmes messages.RegistyResponseMessage
-	err = json.Unmarshal([]byte(mes.Data), &resultmes)
+	err = json.Unmarshal([]byte(res.Data), &resultmes)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -194,8 +175,14 @@ func (this *UserService) showMenus() {
 				{
 					scope = messages.ToAll
 					fmt.Println("请输入您要发送的内容")
-					fmt.Scanf("%s\n", &content)
-
+					// fmt.Scanf("%s\n", &content) // 该写法无法处理中间带有空格的输入
+					rd := bufio.NewReader(os.Stdin)
+					s, err := rd.ReadString('\n')
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+					content = string(s)
 				}
 			case 2:
 				{
@@ -203,8 +190,14 @@ func (this *UserService) showMenus() {
 					fmt.Println("请输入接收用户的ID,多个用户ID请以英文逗号隔开")
 					fmt.Scanf("%s\n", &dstuserstrs)
 					fmt.Println("请输入您要发送的内容")
-					fmt.Scanf("%s\n", &content)
-
+					// fmt.Scanf("%s\n", &content)  // 该写法无法处理中间带有空格的输入
+					rd := bufio.NewReader(os.Stdin)
+					s, err := rd.ReadString('\n')
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+					content = string(s)
 				}
 			default:
 				fmt.Println("您选择的操作代码有误,请重新输入")
@@ -231,8 +224,9 @@ func (this *UserService) showMenus() {
 }
 
 func (this *UserService) GetOnlineUsers() (users map[int]int, err error) {
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.GetOnlineUsersMessageType,
+		UUID: uuid.New().String(),
 	}
 	requestmes := messages.GetOnlineUsersMessage{}
 	responsemes := messages.GetOnlineUsersResponseMessage{}
@@ -244,27 +238,18 @@ func (this *UserService) GetOnlineUsers() (users map[int]int, err error) {
 		return
 	}
 	mes.Data = string(data)
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	err = mt.SendMessage(data)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	mes, err = mt.ReceiveMessage()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	reschan := make(chan *messages.Message, 1)
+	ResponseContainer.Set(mes.UUID, reschan)
+	defer func() {
+		close(reschan)
+		ResponseContainer.Remove(mes.UUID)
+	}()
 
-	err = json.Unmarshal([]byte(mes.Data), &responsemes)
+	MessageSenderChan <- mes
+	res := <-reschan
+
+	err = json.Unmarshal([]byte(res.Data), &responsemes)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -276,8 +261,9 @@ func (this *UserService) GetOnlineUsers() (users map[int]int, err error) {
 }
 
 func (this *UserService) Logout() {
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.LogoutMessageType,
+		UUID: uuid.New().String(),
 	}
 	requesetmes := messages.LogoutMessage{
 		UserID: this.UserID,
@@ -288,16 +274,13 @@ func (this *UserService) Logout() {
 		return
 	}
 	mes.Data = string(data)
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	mt.SendMessage([]byte(data))
+	// reschan := make(chan *messages.Message, 1)
+	// ResponseContainer.Set(mes.UUID, reschan)
+
+	MessageSenderChan <- mes
+	// res := <-reschan
+
 	return
 }
 
@@ -332,26 +315,25 @@ func (this *UserService) SendShortMessage(scope int, dstuserstrs string, content
 		return err
 	}
 
-	mes := messages.Message{
+	mes := &messages.Message{
 		Type: messages.ShortMessageSenderMessageType,
 		Data: string(data),
-	}
-	data, err = json.Marshal(mes)
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
+		UUID: uuid.New().String(),
 	}
 
-	err = mt.SendMessage(data)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
+	// reschan := make(chan *messages.Message, 1)
+	// ResponseContainer.Set(mes.UUID, reschan)
+
+	MessageSenderChan <- mes
+	// res := <-reschan
+
 	return nil
 }
 
-func (this *UserService) HeartBeat() (err error) {
-	mes := messages.Message{
+func (this *UserService) heartBeat() (err error) {
+	mes := &messages.Message{
 		Type: messages.HeartBeatingMessageType,
+		UUID: uuid.New().String(),
 	}
 	heart := messages.HeartBeatingMessage{
 		UserID: this.UserID,
@@ -362,30 +344,107 @@ func (this *UserService) HeartBeat() (err error) {
 		return
 	}
 	mes.Data = string(data)
-	data, err = json.Marshal(mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
-	}
 
 	ticker := time.NewTicker(60 * time.Second)
 	for {
 		_, ok := <-ticker.C
 		if ok {
-			err = mt.SendMessage(data)
-			_, err = mt.ReceiveMessage()
+
+			reschan := make(chan *messages.Message, 1)
+			ResponseContainer.Set(mes.UUID, reschan)
+
+			MessageSenderChan <- mes
+			// res := <-reschan
+
 			//有错误，说明连接有问题，可能需要重连，一般会自动尝试重连几次，若还是失败则会告知用户
-			if err != nil {
-				ticker.Stop()
-				fmt.Println(err)
-				return
-			}
+			// if err != nil {
+			// 	ticker.Stop()
+			// 	fmt.Println(err)
+			// 	return
+			// }
 		}
 	}
 
+	return
+}
+
+func (this *UserService) SequentialSendMessage() {
+	MessageSenderChan = make(chan *messages.Message, 10)
+	mt := utils.MessageTransfer{
+		Conn: this.Conn,
+	}
+	for {
+		mes := <-MessageSenderChan
+		err := mt.SendMessage(mes)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
+}
+
+func (this *UserService) SequentialReceiveMessage() {
+	ResponseContainer = utils.NewConcurrentMap()
+	mt := utils.MessageTransfer{
+		Conn: this.Conn,
+	}
+	for {
+		mes, err := mt.ReceiveMessage()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		reqchan, ok := ResponseContainer.Get(mes.UUID)
+		if !ok {
+			go this.handleMessageOfNoneRequest(mes)
+			// fmt.Println("can not found original request from request container")
+			continue
+		}
+		reqchan <- mes
+	}
+}
+
+func (this *UserService) handleMessageOfNoneRequest(message *messages.Message) {
+	switch message.Type {
+	case messages.UserStateChangeMessageType:
+		{
+			this.handleUserStateChangeMessage(message)
+		}
+	case messages.ShortMessageReceiverMessageType:
+		{
+			this.handleShortReceiverMessage(message)
+		}
+	default:
+		{
+			fmt.Println("not supported message type", message.Type)
+		}
+	}
+	return
+}
+
+func (this *UserService) handleUserStateChangeMessage(message *messages.Message) (err error) {
+	var mes messages.UserStateChangeMessage
+	err = json.Unmarshal([]byte(message.Data), &mes)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	if mes.UserState == messages.UserOnline {
+		fmt.Println("用户", mes.UserID, "上线")
+	} else if mes.UserState == messages.UserOffline {
+		fmt.Println("用户", mes.UserID, "退出")
+	} else {
+	}
+	return
+}
+
+func (this *UserService) handleShortReceiverMessage(message *messages.Message) (err error) {
+	var mes messages.ShortMessageReceiverMessage
+	err = json.Unmarshal([]byte(message.Data), &mes)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("您收到来自用户", mes.SrcUser.UserID, "的消息:", mes.Content)
 	return
 }
