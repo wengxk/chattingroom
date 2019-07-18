@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// UserService 常用用户服务，包括注册、登录、退出等
 type UserService struct {
 	conn              net.Conn
 	userrepo          repositories.UserRepository
@@ -64,10 +65,9 @@ func (this *UserService) Login(message *messages.Message) (user *models.User, er
 		return
 	}
 	resmes.Data = string(data)
+	this.messageSenderChan <- resmes
 
 	if loginresmes.Code == 200 {
-
-		this.messageSenderChan <- resmes
 
 		// 添加用户到全局在线用户中
 		Usermanager.Add(this)
@@ -125,10 +125,8 @@ func (this *UserService) Register(message *messages.Message) (err error) {
 	data, err := json.Marshal(sendmes)
 	if err != nil {
 		return
-	} else {
-		mes.Data = string(data)
 	}
-
+	mes.Data = string(data)
 	this.messageSenderChan <- mes
 
 	return
@@ -181,24 +179,42 @@ func (this *UserService) Logout(message *messages.Message) {
 		fmt.Println(err)
 		return
 	}
+
+	mes := &messages.Message{
+		Type: messages.LogoutResponseMessageType,
+		UUID: message.UUID,
+	}
+	logoutresponsemes := &messages.LogoutResponseMessage{
+		UserID: logoutmes.UserID,
+	}
+	data, err := json.Marshal(logoutresponsemes)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	mes.Data = string(data)
+	this.messageSenderChan <- mes
+
 	// 从在线用户中移除退出的用户
 	Usermanager.Remove(logoutmes.UserID)
 
-	mes := &messages.Message{
+	mes2 := &messages.Message{
 		Type: messages.UserStateChangeMessageType,
 	}
 	spmes := messages.UserStateChangeMessage{
 		UserID:    logoutmes.UserID,
 		UserState: messages.UserOffline,
 	}
-	data, err := json.Marshal(spmes)
+	data2, err := json.Marshal(spmes)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	mes.Data = string(data)
+	mes2.Data = string(data2)
+	Usermanager.PushServerMessage(mes2)
 
-	Usermanager.PushServerMessage(mes)
+	this.conn.SetDeadline(time.Now().Add(60 * time.Second))
+
 }
 
 func (this *UserService) PushServerMessage(message *messages.Message) {

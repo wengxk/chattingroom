@@ -14,6 +14,7 @@ const (
 	GetOnlineUsersMessageType         = "GetOnlineUsersMessage"
 	GetOnlineUsersResponseMessageType = "GetOnlineUsersResponseMessage"
 	LogoutMessageType                 = "LogoutMessage"
+	LogoutResponseMessageType         = "LogoutResponseMessage"
 	UserStateChangeMessageType        = "UserStateChangeMessage"
 	ShortMessageSenderMessageType     = "ShortMessageSenderMessage"
 	ShortMessageReceiverMessageType   = "ShortMessageReceiverMessage"
@@ -77,6 +78,11 @@ type GetOnlineUsersResponseMessage struct {
 
 // LogoutMessage 登出消息
 type LogoutMessage struct {
+	UserID int `json:"userid"` // 用户ID
+}
+
+// LogoutMessage 登出消息
+type LogoutResponseMessage struct {
 	UserID int `json:"userid"` // 用户ID
 }
 

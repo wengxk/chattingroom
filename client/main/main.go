@@ -1,14 +1,9 @@
 package main
 
 import (
-	"chattingroom/client/services"
 	"fmt"
 	"net"
 	"os"
-)
-
-var (
-	Userservice *services.UserService
 )
 
 func main() {
@@ -26,12 +21,8 @@ func main() {
 		}
 	}()
 
-	Userservice = &services.UserService{
-		Conn: conn,
-	}
-
-	go Userservice.SequentialSendMessage()
-	go Userservice.SequentialReceiveMessage()
+	sm := NewServiceManage(conn)
+	sm.Serve()
 
 	for {
 		var (
@@ -63,7 +54,7 @@ func main() {
 				continue
 			}
 			fmt.Println("注册用户中，请稍等")
-			err := Userservice.Register(userid, username, passwd)
+			err := sm.UserService.Register(userid, username, passwd)
 			if err != nil {
 				fmt.Println("注册用户失败", err)
 				continue
@@ -76,7 +67,7 @@ func main() {
 			fmt.Scanf("%d\n", &userid)
 			fmt.Println("请输入用户密码")
 			fmt.Scanf("%s\n", &passwd)
-			err := Userservice.Login(userid, passwd)
+			err := sm.UserService.Login(userid, passwd)
 			if err != nil {
 				fmt.Println("用户登录失败", err)
 				continue

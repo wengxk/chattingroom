@@ -10,6 +10,7 @@ import (
 	"net"
 )
 
+// ServiceManager TCP连接服务管理
 type ServiceManager struct {
 	Conn              net.Conn
 	userService       *services.UserService
@@ -41,8 +42,11 @@ func (this *ServiceManager) HandleConnection() (err error) {
 		}
 		if err != nil {
 			fmt.Println("conn read message err", err)
+			return err
 		}
-		go this.handleService(mes)
+		if mes != nil {
+			go this.handleService(mes)
+		}
 	}
 }
 

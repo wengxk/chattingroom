@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"chattingroom/common/messages"
 	"chattingroom/common/models"
-	"chattingroom/common/utils"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -17,13 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	MessageSenderChan chan *messages.Message
-	ResponseContainer utils.ConcurrentMap
-)
-
+// UserService 常用用户服务，包括注册、登录、退出等
 type UserService struct {
-	Conn   net.Conn
 	UserID int
 }
 
@@ -47,13 +40,13 @@ func (this *UserService) Login(userid int, passwd string) (err error) {
 	mes.Data = string(data)
 
 	reschan := make(chan *messages.Message, 1)
-	ResponseContainer.Set(mes.UUID, reschan)
+	ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
 	defer func() {
 		close(reschan)
-		ResponseContainer.Remove(mes.UUID)
+		ConnRWer.ResponseOfRequestContainer.Remove(mes.UUID)
 	}()
 
-	MessageSenderChan <- mes
+	ConnRWer.MessageSenderChan <- mes
 	res := <-reschan
 
 	var resultmes messages.LoginResponseMessage
@@ -99,13 +92,13 @@ func (this *UserService) Register(userid int, username string, userpwd string) (
 	mes.Data = string(data)
 
 	reschan := make(chan *messages.Message, 1)
-	ResponseContainer.Set(mes.UUID, reschan)
+	ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
 	defer func() {
 		close(reschan)
-		ResponseContainer.Remove(mes.UUID)
+		ConnRWer.ResponseOfRequestContainer.Remove(mes.UUID)
 	}()
 
-	MessageSenderChan <- mes
+	ConnRWer.MessageSenderChan <- mes
 	res := <-reschan
 
 	var resultmes messages.RegistyResponseMessage
@@ -240,13 +233,13 @@ func (this *UserService) GetOnlineUsers() (users map[int]int, err error) {
 	mes.Data = string(data)
 
 	reschan := make(chan *messages.Message, 1)
-	ResponseContainer.Set(mes.UUID, reschan)
+	ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
 	defer func() {
 		close(reschan)
-		ResponseContainer.Remove(mes.UUID)
+		ConnRWer.ResponseOfRequestContainer.Remove(mes.UUID)
 	}()
 
-	MessageSenderChan <- mes
+	ConnRWer.MessageSenderChan <- mes
 	res := <-reschan
 
 	err = json.Unmarshal([]byte(res.Data), &responsemes)
@@ -275,11 +268,15 @@ func (this *UserService) Logout() {
 	}
 	mes.Data = string(data)
 
-	// reschan := make(chan *messages.Message, 1)
-	// ResponseContainer.Set(mes.UUID, reschan)
+	reschan := make(chan *messages.Message, 1)
+	ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
+	defer func() {
+		close(reschan)
+		ConnRWer.ResponseOfRequestContainer.Remove(mes.UUID)
+	}()
 
-	MessageSenderChan <- mes
-	// res := <-reschan
+	ConnRWer.MessageSenderChan <- mes
+	_ = <-reschan
 
 	return
 }
@@ -324,7 +321,7 @@ func (this *UserService) SendShortMessage(scope int, dstuserstrs string, content
 	// reschan := make(chan *messages.Message, 1)
 	// ResponseContainer.Set(mes.UUID, reschan)
 
-	MessageSenderChan <- mes
+	ConnRWer.MessageSenderChan <- mes
 	// res := <-reschan
 
 	return nil
@@ -351,9 +348,9 @@ func (this *UserService) heartBeat() (err error) {
 		if ok {
 
 			reschan := make(chan *messages.Message, 1)
-			ResponseContainer.Set(mes.UUID, reschan)
+			ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
 
-			MessageSenderChan <- mes
+			ConnRWer.MessageSenderChan <- mes
 			// res := <-reschan
 
 			//有错误，说明连接有问题，可能需要重连，一般会自动尝试重连几次，若还是失败则会告知用户
@@ -365,86 +362,5 @@ func (this *UserService) heartBeat() (err error) {
 		}
 	}
 
-	return
-}
-
-func (this *UserService) SequentialSendMessage() {
-	MessageSenderChan = make(chan *messages.Message, 10)
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	for {
-		mes := <-MessageSenderChan
-		err := mt.SendMessage(mes)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-	}
-}
-
-func (this *UserService) SequentialReceiveMessage() {
-	ResponseContainer = utils.NewConcurrentMap()
-	mt := utils.MessageTransfer{
-		Conn: this.Conn,
-	}
-	for {
-		mes, err := mt.ReceiveMessage()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		reqchan, ok := ResponseContainer.Get(mes.UUID)
-		if !ok {
-			go this.handleMessageOfNoneRequest(mes)
-			// fmt.Println("can not found original request from request container")
-			continue
-		}
-		reqchan <- mes
-	}
-}
-
-func (this *UserService) handleMessageOfNoneRequest(message *messages.Message) {
-	switch message.Type {
-	case messages.UserStateChangeMessageType:
-		{
-			this.handleUserStateChangeMessage(message)
-		}
-	case messages.ShortMessageReceiverMessageType:
-		{
-			this.handleShortReceiverMessage(message)
-		}
-	default:
-		{
-			fmt.Println("not supported message type", message.Type)
-		}
-	}
-	return
-}
-
-func (this *UserService) handleUserStateChangeMessage(message *messages.Message) (err error) {
-	var mes messages.UserStateChangeMessage
-	err = json.Unmarshal([]byte(message.Data), &mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	if mes.UserState == messages.UserOnline {
-		fmt.Println("用户", mes.UserID, "上线")
-	} else if mes.UserState == messages.UserOffline {
-		fmt.Println("用户", mes.UserID, "退出")
-	} else {
-	}
-	return
-}
-
-func (this *UserService) handleShortReceiverMessage(message *messages.Message) (err error) {
-	var mes messages.ShortMessageReceiverMessage
-	err = json.Unmarshal([]byte(message.Data), &mes)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println("您收到来自用户", mes.SrcUser.UserID, "的消息:", mes.Content)
 	return
 }
