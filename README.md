@@ -27,4 +27,29 @@
 5. 在读管道的协程里，根据请求响应返回的UID，在全局map中找出对应的管道并写入响应，如果没有UID，那么该消息就为服务器主动推送的数据，根据消息类型，交给对应消息类型的业务逻辑处理
 6. 阻塞协程从管道中获取自己期望的数据，继续往下处理
 
-![image](./arch.jpg)
+![image](./content/arch.jpg)
+
+
+## 功能
+
+### 注册
+
+![image](./content/register.png)
+
+### 登录
+
+![image](./content/login.png)
+
+### 显示在线用户列表
+
+![image](./content/show_online_users.png)
+
+### 群发消息
+
+![image](./content/pushmestoall.png)
+
+### 选择发送消息
+
+![image](./content/pushmestocertainuser.png)
+
+
