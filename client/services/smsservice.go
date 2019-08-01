@@ -21,6 +21,9 @@ func (this *SMSService) HandleMessageOfNoneRequest(message *messages.Message) {
 		{
 			this.handleShortReceiverMessage(message)
 		}
+	case messages.HeartBeatingMessageType:
+		{
+		}
 	default:
 		{
 			fmt.Println("not supported message type", message.Type)

@@ -3,7 +3,9 @@ package services
 import (
 	"chattingroom/common/messages"
 	"chattingroom/common/utils"
+	"context"
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -28,12 +30,17 @@ func NewConnSequentialRWer(conn net.Conn, senderCap int, receiverCap int) (crwer
 	}
 }
 
-func (this *ConnSequentialRWer) Start() {
+func (this *ConnSequentialRWer) Start(ctx context.Context) {
 	go func() {
 		mt := utils.MessageTransfer{
 			Conn: this.Conn,
 		}
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			mes := <-this.MessageSenderChan
 			err := mt.SendMessage(mes)
 			if err != nil {
@@ -48,17 +55,28 @@ func (this *ConnSequentialRWer) Start() {
 			Conn: this.Conn,
 		}
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			mes, err := mt.ReceiveMessage()
-			if err != nil {
-				fmt.Println(err)
+			if err == io.EOF {
+				fmt.Println("conn closed", err)
 				return
 			}
-			reqchan, ok := this.ResponseOfRequestContainer.Get(mes.UUID)
-			if !ok {
-				this.ResponseMessageOfNoneRequestChan <- mes
-				continue
+			if err != nil {
+				fmt.Println("conn read message err", err)
+				return
 			}
-			reqchan <- mes
+			if mes != nil {
+				reqchan, ok := this.ResponseOfRequestContainer.Get(mes.UUID)
+				if !ok {
+					this.ResponseMessageOfNoneRequestChan <- mes
+					continue
+				}
+				reqchan <- mes
+			}
 		}
 	}()
 }

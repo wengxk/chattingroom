@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -58,7 +57,9 @@ func (this *UserService) Login(userid int, passwd string) (err error) {
 		this.UserID = userid
 		fmt.Println("登录成功")
 		for {
-			this.showMenus()
+			if !this.showMenus() {
+				return
+			}
 		}
 	} else {
 		err = errors.New(resultmes.Error)
@@ -129,12 +130,12 @@ func (this *UserService) validateRegisterUser(user *models.User) (err error) {
 }
 
 // 显示用户登录后的交互菜单
-func (this *UserService) showMenus() {
+func (this *UserService) showMenus() bool {
 	fmt.Println()
 	fmt.Println("--------恭喜登录成功-----------")
 	fmt.Println("--------1. 显示在线用户--------")
 	fmt.Println("--------2. 发送聊天消息--------")
-	fmt.Println("--------3. 退出系统------------")
+	fmt.Println("--------3. 退出登录------------")
 	fmt.Println("请选择(1-3)")
 
 	var key int
@@ -146,7 +147,7 @@ func (this *UserService) showMenus() {
 			users, err := this.GetOnlineUsers()
 			if err != nil {
 				fmt.Println(err)
-				return
+				return true
 			}
 			for k, v := range users {
 				fmt.Println(k, v)
@@ -173,11 +174,12 @@ func (this *UserService) showMenus() {
 					s, err := rd.ReadString('\n')
 					if err != nil {
 						fmt.Println(err)
-						return
+						return true
 					}
 					content = string(s)
 				}
-			case 2:
+
+			case 3:
 				{
 					scope = messages.ToUsers
 					fmt.Println("请输入接收用户的ID,多个用户ID请以英文逗号隔开")
@@ -188,32 +190,32 @@ func (this *UserService) showMenus() {
 					s, err := rd.ReadString('\n')
 					if err != nil {
 						fmt.Println(err)
-						return
+						return true
 					}
 					content = string(s)
 				}
 			default:
 				fmt.Println("您选择的操作代码有误,请重新输入")
-				return
+				return true
 
 			}
 			err := this.SendShortMessage(scope, dstuserstrs, content)
 			if err != nil {
 				fmt.Println(err)
-				return
+				return true
 			}
 		}
 	case 3:
 		{
 			fmt.Println("正在退出")
 			this.Logout()
-			os.Exit(0)
-
+			return false
 		}
 	default:
 		fmt.Println("选择操作代码有误，请重新选择")
-
+		return true
 	}
+	return true
 }
 
 func (this *UserService) GetOnlineUsers() (users map[int]int, err error) {
@@ -325,42 +327,4 @@ func (this *UserService) SendShortMessage(scope int, dstuserstrs string, content
 	// res := <-reschan
 
 	return nil
-}
-
-func (this *UserService) heartBeat() (err error) {
-	mes := &messages.Message{
-		Type: messages.HeartBeatingMessageType,
-		UUID: uuid.New().String(),
-	}
-	heart := messages.HeartBeatingMessage{
-		UserID: this.UserID,
-	}
-	data, err := json.Marshal(heart)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	mes.Data = string(data)
-
-	ticker := time.NewTicker(60 * time.Second)
-	for {
-		_, ok := <-ticker.C
-		if ok {
-
-			reschan := make(chan *messages.Message, 1)
-			ConnRWer.ResponseOfRequestContainer.Set(mes.UUID, reschan)
-
-			ConnRWer.MessageSenderChan <- mes
-			// res := <-reschan
-
-			//有错误，说明连接有问题，可能需要重连，一般会自动尝试重连几次，若还是失败则会告知用户
-			// if err != nil {
-			// 	ticker.Stop()
-			// 	fmt.Println(err)
-			// 	return
-			// }
-		}
-	}
-
-	return
 }

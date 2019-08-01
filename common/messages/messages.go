@@ -122,9 +122,7 @@ type ShortMessageReceiverMessage struct {
 }
 
 type HeartBeatingMessage struct {
-	UserID int `json:"userid"`
 }
 
 type HeartBeatingResponseMessage struct {
-	UserID int `json:"userid"`
 }

@@ -31,11 +31,17 @@ func main() {
 }
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
 	// conn.SetDeadline(time.Now().Add(120 * time.Second))
 	sm := &ServiceManager{
 		Conn: conn,
 	}
+	defer func() {
+		conn.Close()
+		sm.closeDoneChan()
+		if err := recover(); err != nil {
+			fmt.Println(err)
+		}
+	}()
 	err := sm.HandleConnection()
 	if err != nil {
 		fmt.Println(err)

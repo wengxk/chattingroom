@@ -225,3 +225,7 @@ func (this *UserService) PushServerMessage(message *messages.Message) {
 func (this *UserService) HeartBeat(message *messages.Message) {
 	this.conn.SetDeadline(time.Now().Add(120 * time.Second))
 }
+
+func (this *UserService) Offline() {
+	Usermanager.Remove(this.User.UserID)
+}

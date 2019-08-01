@@ -4,10 +4,14 @@ import (
 	"chattingroom/common/messages"
 	"chattingroom/common/utils"
 	"chattingroom/server/services"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // ServiceManager TCP连接服务管理
@@ -15,13 +19,27 @@ type ServiceManager struct {
 	Conn              net.Conn
 	userService       *services.UserService
 	MessageSenderChan chan *messages.Message
+	doneChan          chan struct{}
+	lastReadTime      int64 // last readed mes time of unix
+	idleTime          int64 // idle time
+}
+
+func (this *ServiceManager) closeDoneChan() {
+	select {
+	case <-this.doneChan:
+	default:
+		close(this.doneChan)
+		this.userService.Offline()
+		fmt.Println("close")
+	}
 }
 
 func (this *ServiceManager) HandleConnection() (err error) {
-
+	this.doneChan = make(chan struct{})
+	this.lastReadTime = time.Now().Unix()
+	this.idleTime = 120
 	this.MessageSenderChan = make(chan *messages.Message, 50)
 	this.userService = services.NewUserService(this.Conn, this.MessageSenderChan)
-
 	go this.sequentialSendMessage()
 
 	defer (func() {
@@ -30,11 +48,18 @@ func (this *ServiceManager) HandleConnection() (err error) {
 		}
 	})()
 
+	go this.checkAlive()
+	go this.beating()
+
 	mt := &utils.MessageTransfer{
 		Conn: this.Conn,
 	}
-
 	for {
+		select {
+		case <-this.doneChan:
+			return
+		default:
+		}
 		mes, err := mt.ReceiveMessage()
 		if err == io.EOF {
 			fmt.Println("conn closed", err)
@@ -46,6 +71,30 @@ func (this *ServiceManager) HandleConnection() (err error) {
 		}
 		if mes != nil {
 			go this.handleService(mes)
+			this.lastReadTime = time.Now().Unix()
+		}
+	}
+
+	return
+}
+
+func (this *ServiceManager) checkAlive() {
+	ticker := time.NewTicker(120 * time.Second)
+	for {
+		select {
+		case <-this.doneChan:
+			return
+		default:
+		}
+		_, ok := <-ticker.C
+		if ok {
+			if time.Now().Unix()-this.lastReadTime > this.idleTime {
+				this.closeDoneChan()
+				return
+			}
+		} else {
+			this.closeDoneChan()
+			return
 		}
 	}
 }
@@ -71,7 +120,6 @@ func (this *ServiceManager) handleService(message *messages.Message) (err error)
 		}
 	case messages.HeartBeatingMessageType:
 		{
-			this.userService.HeartBeat(message)
 		}
 	case messages.ShortMessageSenderMessageType:
 		{
@@ -88,6 +136,11 @@ func (this *ServiceManager) sequentialSendMessage() {
 		Conn: this.Conn,
 	}
 	for {
+		select {
+		case <-this.doneChan:
+			return
+		default:
+		}
 		mes := <-this.MessageSenderChan
 		err := mt.SendMessage(mes)
 		if err != nil {
@@ -95,4 +148,33 @@ func (this *ServiceManager) sequentialSendMessage() {
 			return
 		}
 	}
+}
+
+func (this *ServiceManager) beating() (err error) {
+	mes := &messages.Message{
+		Type: messages.HeartBeatingMessageType,
+		UUID: uuid.New().String(),
+	}
+	heart := messages.HeartBeatingMessage{}
+	data, err := json.Marshal(heart)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	mes.Data = string(data)
+
+	ticker := time.NewTicker(60 * time.Second)
+	for {
+		select {
+		case <-this.doneChan:
+			return
+		default:
+		}
+		_, ok := <-ticker.C
+		if ok {
+			this.MessageSenderChan <- mes
+		}
+	}
+
+	return
 }
